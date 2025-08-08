@@ -8,14 +8,39 @@ from bs4 import BeautifulSoup, Comment
 # Streamlit page setup + CSS
 # ---------------------------
 st.set_page_config(page_title="Law Firm Agency Detector", page_icon="🔎", layout="wide")
+
+# ---- Style block (Step 2) ----
 st.markdown("""
 <style>
+/* Hide Streamlit branding menu/footer */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: visible;}
-.title { font-weight: 700; letter-spacing: .2px; margin-bottom: .25rem; }
-[data-testid="stFileUploaderDropzone"] { border: 1px dashed rgba(127,127,127,.35); border-radius: 12px; }
-[data-testid="stDataFrame"] div[role="grid"] { border-radius: 12px; }
+
+/* Page title */
+.title {
+  font-weight: 700;
+  letter-spacing: .3px;
+  font-size: 1.8rem;
+  margin-bottom: .25rem;
+}
+
+/* Upload box styling */
+[data-testid="stFileUploaderDropzone"] {
+  border: 2px dashed rgba(255,255,255,0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+/* Dataframe corners */
+[data-testid="stDataFrame"] div[role="grid"] {
+  border-radius: 12px;
+}
+
+/* Progress bar color (teal) */
+.stProgress > div > div > div > div {
+  background-color: #14b8a6;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -88,10 +113,8 @@ def detect_agency(html: str) -> dict:
         for sig in signatures:
             if sig in full_text:
                 kinds = []
-                # simple heuristics about "what matched"
                 if any(x in full_text for x in (".js", ".css", "cdn", ".png", ".jpg", ".svg")):
                     kinds.append("asset")
-                # if we saw any footer text at all, include 'text' (footer var already added)
                 kinds.append("text")
                 evidence[agency] = sorted(set(kinds))
                 break  # stop after first signature match for this agency
