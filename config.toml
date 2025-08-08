@@ -1,0 +1,10 @@
+[server]
+headless = true
+
+[theme]
+base = "dark"                        # use "light" if preferred
+primaryColor = "#9dcb3b"              # teal accent
+backgroundColor = "#0b0f14"
+secondaryBackgroundColor = "#111827"
+textColor = "#9ae200"
+font = "sans serif"
