@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup, Comment
 # ---------------------------
 st.set_page_config(page_title="Law Firm Agency Detector", page_icon="🔎", layout="wide")
 
-# ---- Style block ----
 st.markdown("""
 <style>
 #MainMenu {visibility: hidden;}
@@ -19,11 +18,24 @@ header {visibility: visible;}
 [data-testid="stFileUploaderDropzone"] { border: 2px dashed rgba(255,255,255,0.3); border-radius: 12px; padding: 1.5rem; }
 [data-testid="stDataFrame"] div[role="grid"] { border-radius: 12px; }
 .stProgress > div > div > div > div { background-color: #14b8a6; }
+.brand-header { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+.brand-header img { max-height: 60px; height: auto; width: auto; max-width: 100%; border-radius: 8px; }
+.brand-text { display: flex; flex-direction: column; }
+.brand-text h1 { font-size: 1.8rem; margin: 0; font-weight: 700; }
+.brand-text p { font-size: 1rem; margin: 0; color: #9ca3af; }
+
+/* Mobile tweaks */
+@media (max-width: 600px) {
+    .brand-header { justify-content: center; text-align: center; }
+    .brand-text { align-items: center; }
+    .brand-text h1 { font-size: 1.4rem; }
+    .brand-text p { font-size: 0.9rem; }
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ----------------------------------------
-# Agency signatures (16 vendors, editable)
+# Agency signatures
 # ----------------------------------------
 AGENCIES = {
     "Hennessey Digital": ["hennessey"],
@@ -56,37 +68,25 @@ def normalize_url(url: str) -> str:
     return url
 
 def detect_agency(html: str) -> dict:
-    """Return {'Agency Name': ['asset','text',...]} based on code/text matches."""
     soup = BeautifulSoup(html, "html.parser")
     evidence = {}
 
-    # Collect searchable strings
     texts = []
-
-    # Footer text
     footer = soup.find("footer")
     if footer:
         texts.append(footer.get_text(" ", strip=True))
-
-    # Meta tag content
     for meta in soup.find_all("meta"):
         content = meta.get("content")
         if content:
             texts.append(str(content))
-
-    # HTML comments
     for comment in soup.find_all(string=lambda t: isinstance(t, Comment)):
         texts.append(str(comment))
-
-    # Assets (scripts, styles, images)
     for tag in soup.find_all(["script", "link", "img"]):
         src = tag.get("src") or tag.get("href")
         if src:
             texts.append(str(src))
 
     full_text = " ".join(texts).lower()
-
-    # Check for each agency's signatures
     for agency, signatures in AGENCIES.items():
         for sig in signatures:
             if sig in full_text:
@@ -95,22 +95,19 @@ def detect_agency(html: str) -> dict:
                     kinds.append("asset")
                 kinds.append("text")
                 evidence[agency] = sorted(set(kinds))
-                break  # stop after first signature match for this agency
-
+                break
     return evidence
 
 def run_scan(df: pd.DataFrame) -> pd.DataFrame:
-    # Find the column that likely contains URLs
     url_col = None
     for c in df.columns:
         if str(c).strip().lower() in ("url", "urls", "website", "domain"):
             url_col = c
             break
     if url_col is None:
-        url_col = df.columns[0]  # assume first column is URLs
+        url_col = df.columns[0]
 
     urls = df[url_col].dropna().astype(str).tolist()
-
     results = []
     prog = st.progress(0, text="Starting scan…")
 
@@ -121,12 +118,11 @@ def run_scan(df: pd.DataFrame) -> pd.DataFrame:
             results.append({"URL": url, "Agency Detected": "Error", "Evidence Type": "Empty URL"})
             prog.progress(i/len(urls), text=f"Scanning… {i}/{len(urls)}")
             continue
-
         try:
             r = requests.get(
                 full_url,
                 timeout=12,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
+                headers={"User-Agent": "Mozilla/5.0"}
             )
             if r.status_code == 200 and r.text:
                 hits = detect_agency(r.text)
@@ -152,13 +148,20 @@ def run_scan(df: pd.DataFrame) -> pd.DataFrame:
 # Streamlit app
 # ---------------------------
 def main():
-    st.markdown("<h1 class='title'>🏷️ Law Firm Website Agency Detector</h1>", unsafe_allow_html=True)
-    st.write("Upload a CSV of URLs and I’ll flag likely website vendors (Hennessey, Scorpion, LawRank, FindLaw, etc.).")
+    # ---- Branded Header ----
+    st.markdown("""
+    <div class="brand-header">
+        <img src="https://pbs.twimg.com/profile_images/1613686478852308992/UY_QrRVA_400x400.jpg" alt="Brand Logo">
+        <div class="brand-text">
+            <h1>Law Firm Website Agency Detector</h1>
+            <p>Identify competitor-built law firm websites — instantly.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # Sidebar (summary + filters)
     st.sidebar.header("Summary & Filters")
 
-    # Sample CSV download
+    # Sample CSV
     sample = io.StringIO()
     pd.DataFrame({"URL": ["example.com", "scorpion.co", "hennesseydigital.com"]}).to_csv(sample, index=False)
     st.download_button(
@@ -174,7 +177,6 @@ def main():
     )
 
     if uploaded:
-        # read CSV robustly
         try:
             df = pd.read_csv(uploaded, encoding="utf-8", engine="python")
         except Exception:
@@ -187,7 +189,6 @@ def main():
         if st.button("▶️ Run scan"):
             result_df = run_scan(df)
 
-            # ---- Sidebar metrics & filters ----
             total_urls = len(df)
             detected_df = result_df[~result_df["Agency Detected"].isin(["None", "Error"])]
             detected_count = len(detected_df)
@@ -197,7 +198,6 @@ def main():
             st.sidebar.metric("Detected", detected_count)
             st.sidebar.metric("Detection rate", rate)
 
-            # Counts by agency (for bar chart + multiselect)
             counts = detected_df["Agency Detected"].value_counts().sort_values(ascending=False)
             if not counts.empty:
                 st.sidebar.bar_chart(counts)
@@ -211,19 +211,16 @@ def main():
 
             hide_none_error = st.sidebar.checkbox("Hide None/Error rows", value=True)
 
-            # Apply filters
             filtered = result_df.copy()
             if hide_none_error:
                 filtered = filtered[~filtered["Agency Detected"].isin(["None", "Error"])]
             if selected_agencies:
                 filtered = filtered[filtered["Agency Detected"].isin(selected_agencies)]
 
-            # ---- Main area output ----
             st.success("✅ Done!")
             st.subheader("Results")
             st.dataframe(filtered if not filtered.empty else result_df, use_container_width=True)
 
-            # Downloads (filtered + raw)
             st.download_button(
                 "📥 Download filtered results CSV",
                 (filtered if not filtered.empty else result_df).to_csv(index=False).encode("utf-8"),
