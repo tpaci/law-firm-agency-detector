@@ -9,38 +9,16 @@ from bs4 import BeautifulSoup, Comment
 # ---------------------------
 st.set_page_config(page_title="Law Firm Agency Detector", page_icon="🔎", layout="wide")
 
-# ---- Style block (Step 2) ----
+# ---- Style block ----
 st.markdown("""
 <style>
-/* Hide Streamlit branding menu/footer */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: visible;}
-
-/* Page title */
-.title {
-  font-weight: 700;
-  letter-spacing: .3px;
-  font-size: 1.8rem;
-  margin-bottom: .25rem;
-}
-
-/* Upload box styling */
-[data-testid="stFileUploaderDropzone"] {
-  border: 2px dashed rgba(255,255,255,0.3);
-  border-radius: 12px;
-  padding: 1.5rem;
-}
-
-/* Dataframe corners */
-[data-testid="stDataFrame"] div[role="grid"] {
-  border-radius: 12px;
-}
-
-/* Progress bar color (teal) */
-.stProgress > div > div > div > div {
-  background-color: #14b8a6;
-}
+.title { font-weight: 700; letter-spacing: .3px; font-size: 1.8rem; margin-bottom: .25rem; }
+[data-testid="stFileUploaderDropzone"] { border: 2px dashed rgba(255,255,255,0.3); border-radius: 12px; padding: 1.5rem; }
+[data-testid="stDataFrame"] div[role="grid"] { border-radius: 12px; }
+.stProgress > div > div > div > div { background-color: #14b8a6; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -177,6 +155,9 @@ def main():
     st.markdown("<h1 class='title'>🏷️ Law Firm Website Agency Detector</h1>", unsafe_allow_html=True)
     st.write("Upload a CSV of URLs and I’ll flag likely website vendors (Hennessey, Scorpion, LawRank, FindLaw, etc.).")
 
+    # Sidebar (summary + filters)
+    st.sidebar.header("Summary & Filters")
+
     # Sample CSV download
     sample = io.StringIO()
     pd.DataFrame({"URL": ["example.com", "scorpion.co", "hennesseydigital.com"]}).to_csv(sample, index=False)
@@ -205,13 +186,54 @@ def main():
 
         if st.button("▶️ Run scan"):
             result_df = run_scan(df)
-            st.success("✅ Done!")
-            st.dataframe(result_df, use_container_width=True)
 
+            # ---- Sidebar metrics & filters ----
+            total_urls = len(df)
+            detected_df = result_df[~result_df["Agency Detected"].isin(["None", "Error"])]
+            detected_count = len(detected_df)
+            rate = f"{(detected_count / total_urls * 100):.0f}%" if total_urls else "0%"
+
+            st.sidebar.metric("Total URLs", total_urls)
+            st.sidebar.metric("Detected", detected_count)
+            st.sidebar.metric("Detection rate", rate)
+
+            # Counts by agency (for bar chart + multiselect)
+            counts = detected_df["Agency Detected"].value_counts().sort_values(ascending=False)
+            if not counts.empty:
+                st.sidebar.bar_chart(counts)
+                selected_agencies = st.sidebar.multiselect(
+                    "Show only these agencies",
+                    options=counts.index.tolist(),
+                    default=counts.index.tolist()
+                )
+            else:
+                selected_agencies = []
+
+            hide_none_error = st.sidebar.checkbox("Hide None/Error rows", value=True)
+
+            # Apply filters
+            filtered = result_df.copy()
+            if hide_none_error:
+                filtered = filtered[~filtered["Agency Detected"].isin(["None", "Error"])]
+            if selected_agencies:
+                filtered = filtered[filtered["Agency Detected"].isin(selected_agencies)]
+
+            # ---- Main area output ----
+            st.success("✅ Done!")
+            st.subheader("Results")
+            st.dataframe(filtered if not filtered.empty else result_df, use_container_width=True)
+
+            # Downloads (filtered + raw)
             st.download_button(
-                "📥 Download results CSV",
+                "📥 Download filtered results CSV",
+                (filtered if not filtered.empty else result_df).to_csv(index=False).encode("utf-8"),
+                file_name="agency_results_filtered.csv",
+                mime="text/csv"
+            )
+            st.download_button(
+                "📥 Download full results CSV",
                 result_df.to_csv(index=False).encode("utf-8"),
-                file_name="agency_results.csv",
+                file_name="agency_results_full.csv",
                 mime="text/csv"
             )
     else:
